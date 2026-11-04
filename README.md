@@ -1,165 +1,160 @@
 # Portfolio Optimizer
 
-A Modern Portfolio Theory (MPT) toolkit in Python: estimate expected returns and risk from price history, explore thousands of random portfolios, compute the efficient frontier, and find the **maximum-Sharpe** and **minimum-volatility** portfolios — plus Monte Carlo simulation of future wealth paths.
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Tests](https://img.shields.io/badge/tests-29%20passing-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Stack](https://img.shields.io/badge/stack-NumPy%20%7C%20Pandas%20%7C%20SciPy-orange)
+![Dashboard](https://img.shields.io/badge/dashboard-offline%20HTML-purple)
 
-It runs **fully offline** out of the box. A seeded synthetic-data generator produces realistic, correlated asset prices, so the demo and the entire test suite work with no internet connection and no API keys. An optional `yfinance` wrapper is included for live data when you want it.
+**A portfolio-construction toolkit that goes past textbook Markowitz.** Five
+allocation frameworks — Markowitz max-Sharpe / min-volatility, **Risk Parity**,
+**Hierarchical Risk Parity**, and **Black–Litterman** — built on a
+**Ledoit–Wolf shrunk covariance**, and judged the only honest way: an
+**expanding-window walk-forward backtest** where no strategy ever sees the
+future it is tested on.
 
-> **Disclaimer: Educational use only — not investment advice.** Past / simulated performance does not predict future returns. Do your own research and consider speaking to a licensed financial adviser before investing.
+> 📊 **[Open the interactive dashboard](docs/dashboard.html)** — a single
+> self-contained HTML file (no CDN, works offline) with the efficient frontier
+> and the backtest growth curves, rendered from data computed by this code.
 
 ---
 
-## What it does
+## Headline results — walk-forward backtest
 
-| Capability | Function |
-|---|---|
-| Synthetic prices (offline, seeded) | `generate_synthetic_prices()` |
-| Live prices (optional, needs `yfinance`) | `download_prices()` |
-| Daily returns | `compute_returns()` |
-| Expected returns (annualised) | `expected_returns()` |
-| Covariance matrix (annualised) | `covariance_matrix()` |
-| Portfolio return / vol / Sharpe | `portfolio_stats()` |
-| Random portfolio sampling | `generate_random_portfolios()` |
-| Efficient frontier | `efficient_frontier()` |
-| Maximum-Sharpe portfolio | `max_sharpe_portfolio()` |
-| Minimum-volatility portfolio | `min_volatility_portfolio()` |
-| Monte Carlo wealth paths | `monte_carlo_simulation()` / `summarise_simulation()` |
+Seeded synthetic universe (AAPL, MSFT, GOOGL, AMZN, JPM, XOM), 756 trading
+days, 252-day initial training window, 63-day rebalancing steps,
+Ledoit–Wolf covariance, **504 out-of-sample days**. Reproduce with
+`python main.py --backtest`:
 
-## The maths
+| Strategy | Annual return | Volatility | Sharpe | Sortino | Max drawdown | Calmar | $10,000 grew to |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Equal Weight | 12.70% | 14.93% | 0.741 | 1.079 | −22.45% | 0.566 | $12,701.25 |
+| **Max-Sharpe** | **22.84%** | 19.09% | **1.068** | **1.657** | **−18.42%** | **1.240** | **$15,089.29** |
+| Min-Volatility | 11.35% | **13.64%** | 0.710 | 1.036 | −20.34% | 0.558 | $12,398.48 |
+| Risk Parity | 12.81% | 14.27% | 0.776 | 1.129 | −20.88% | 0.613 | $12,725.90 |
+| HRP | 12.03% | 13.83% | 0.746 | 1.084 | −21.12% | 0.570 | $12,551.11 |
 
-For weights $w$, expected asset returns $\mu$ and covariance matrix $\Sigma$ (all annualised, 252 trading days):
+Read it honestly: Max-Sharpe wins this sample *and* carries the highest
+volatility; Min-Volatility and HRP deliver the calmest ride; Risk Parity
+edges out 1/N on Sharpe with less volatility. One seeded sample proves
+nothing about live markets — it proves the machinery runs, compares
+fairly, and reports its own drawdowns.
 
-- **Portfolio return:** $R_p = w^T \mu$
-- **Portfolio variance:** $\sigma_p^2 = w^T \Sigma w$, volatility $\sigma_p = \sqrt{\sigma_p^2}$
-- **Sharpe ratio:** $S = \dfrac{R_p - R_f}{\sigma_p}$ — excess return per unit of risk, with risk-free rate $R_f$
+## Features
 
-**Efficient frontier:** for each target return, the frontier portfolio is the one with the lowest possible volatility. Portfolios on the frontier are *efficient* — no other portfolio offers more return for the same risk, or less risk for the same return.
+- **Five allocators** — Equal Weight, Max-Sharpe, Min-Volatility, Risk
+  Parity (equal risk contribution), HRP, plus a full Black–Litterman
+  posterior engine with investor views
+- **Ledoit–Wolf covariance shrinkage**, implemented from the 2004 paper
+  in pure NumPy (δ = 0.0228 on the demo sample — small, because 504
+  observations for 6 assets is already a well-conditioned problem)
+- **Walk-forward backtest** — expanding window, weights estimated only
+  from history, Sharpe / Sortino / max drawdown / Calmar from realised
+  out-of-sample returns
+- **Efficient frontier** and 5,000-portfolio random sampling
+- **Monte Carlo** wealth simulation (max-Sharpe demo: median $12,097.18
+  after 1 year on $10,000, 5th–95th percentile $9,071.42–$16,068.49,
+  probability of loss 15.50%)
+- **Offline by design** — seeded synthetic data generator with a shared
+  market factor, so the whole pipeline (demo, backtest, dashboard,
+  tests) runs with no internet; optional `yfinance` download path for
+  real data
+- **29 pytest tests**, including allocator invariants (risk-parity
+  contributions equal to within tolerance, HRP inverse-variance splits,
+  Black–Litterman posterior pulled toward — not onto — a view)
 
-**Optimisation:** long-only ($0 \le w_i \le 1$), fully invested ($\sum w_i = 1$). Solved with SciPy SLSQP when SciPy is available; otherwise a NumPy random-search + local-refinement solver is used automatically, so the toolkit still runs in minimal environments.
+## Architecture
 
-**Monte Carlo:** daily asset returns are drawn from a multivariate normal distribution with the estimated daily $\mu$ / $\Sigma$ (projected to the nearest positive-semidefinite matrix), compounded into wealth paths. The summary reports median, 5th and 95th percentile final values and the probability of loss.
+```mermaid
+flowchart LR
+    A[Prices<br/>synthetic seeded or yfinance] --> B[Returns]
+    B --> C[Expected returns μ]
+    B --> D[Ledoit–Wolf<br/>shrunk covariance Σ]
+    C --> E[Allocators]
+    D --> E
+    E --> E1[Max-Sharpe / Min-Vol]
+    E --> E2[Risk Parity]
+    E --> E3[HRP]
+    E --> E4[Black–Litterman<br/>equilibrium + views]
+    E1 --> F[Walk-forward backtest]
+    E2 --> F
+    E3 --> F
+    F --> G[Metrics<br/>Sharpe · Sortino · MaxDD · Calmar]
+    E --> H[Dashboard<br/>docs/dashboard.html]
+    G --> H
+```
 
-## Installation
+## Quickstart
 
 ```bash
-git clone <this-repo>
-cd portfolio-optimizer
-python -m venv .venv && source .venv/bin/activate   # optional but recommended
 pip install -r requirements.txt        # numpy, pandas, scipy
-pip install -r requirements-dev.txt    # + pytest, for the tests
+python main.py                         # full demo: all allocators + frontier + Monte Carlo
+python main.py --backtest              # + walk-forward comparison table
+python src/backtest.py                 # backtest only
+python src/dashboard.py                # regenerate docs/dashboard.html
+pip install -r requirements-dev.txt    # adds pytest
+python -m pytest tests -q              # 29 tests
 ```
-
-Requires Python 3.10+.
-
-## Quick start — CLI demo (offline)
-
-```bash
-python main.py
-```
-
-Sample output (verified run, synthetic data, seed 42 — reproducible exactly):
-
-```
-Portfolio Optimizer — Modern Portfolio Theory demo
-Data: synthetic (seeded, offline) — no internet required
-Assets: AAPL, MSFT, GOOGL, AMZN, JPM, XOM
-History: 505 trading days, 504 return observations
-
-Random portfolios sampled: 5,000 (vol range 13.58%–25.08%)
-
-Maximum-Sharpe portfolio
-------------------------
-  AMZN   66.64%
-  JPM    33.36%
-  Expected annual return : 20.49%
-  Annual volatility      : 17.99%
-  Sharpe ratio (rf=2%)   :  1.028
-
-Minimum-volatility portfolio
-----------------------------
-  AAPL    0.18%
-  GOOGL  57.06%
-  AMZN   12.39%
-  JPM    26.80%
-  XOM     3.58%
-  Expected annual return :  9.94%
-  Annual volatility      : 13.37%
-  Sharpe ratio (rf=2%)   :  0.594
-
-Monte Carlo — max-Sharpe portfolio, 1 year, $10,000 invested
---------------------------------------------------------------
-  Simulations            : 1,000
-  Median final value     : $12,097.18
-  5th percentile         : $9,071.42
-  95th percentile        : $16,068.49
-  Probability of loss    : 15.50%
-```
-
-(The demo also prints a 10-point efficient-frontier table between the
-minimum-volatility portfolio and the Monte Carlo section.)
-
-Options: `python main.py --seed 7 --portfolios 10000 --simulations 2000`
-
-## Usage as a library
-
-```python
-import sys
-sys.path.insert(0, "src")
-
-from portfolio_optimizer import (
-    generate_synthetic_prices, compute_returns, expected_returns,
-    covariance_matrix, max_sharpe_portfolio, min_volatility_portfolio,
-)
-
-prices  = generate_synthetic_prices(n_days=504, seed=42)   # or your own price DataFrame
-returns = compute_returns(prices)
-mu      = expected_returns(returns)        # annualised
-cov     = covariance_matrix(returns)       # annualised
-
-best = max_sharpe_portfolio(mu, cov, risk_free_rate=0.02)
-print(best.weights, best.expected_return, best.volatility, best.sharpe_ratio)
-
-calm = min_volatility_portfolio(mu, cov, risk_free_rate=0.02)
-```
-
-To use real market data, pass any price DataFrame (columns = tickers, rows = dates) to `compute_returns()` — or install the optional extra and call `download_prices(["AAPL", "MSFT"], start="2023-01-01")` (`pip install yfinance`).
-
-## Tests
-
-```bash
-python -m pytest tests/ -v
-```
-
-12 tests cover: return calculation against hand-computed values, synthetic-data determinism, covariance shape / symmetry / positive variances, portfolio-statistics maths against closed-form values, optimiser constraints (weights sum to 1, non-negative) and optimality vs. an equal-weight benchmark, random-portfolio normalisation, frontier monotonicity, and Monte Carlo shape / percentile ordering. All tests run offline.
 
 ## Project structure
 
 ```
 portfolio-optimizer/
-├── main.py                        # CLI demo (offline, synthetic data)
-├── requirements.txt               # numpy, pandas, scipy
-├── requirements-dev.txt           # + pytest
+├── main.py                      # CLI demo (offline, seeded)
 ├── src/
-│   ├── __init__.py                # public API re-exports
-│   └── portfolio_optimizer.py     # core module (data, stats, optimisation, MC)
-├── tests/
-│   └── test_portfolio_optimizer.py
-├── examples/
-│   └── quickstart.py
-├── LICENSE
-└── README.md
+│   ├── portfolio_optimizer.py   # core MPT: stats, frontier, max-Sharpe,
+│   │                            # min-vol, Monte Carlo, synthetic data
+│   ├── covariance.py            # Ledoit–Wolf shrinkage (pure NumPy)
+│   ├── allocators.py            # Risk Parity, HRP, Black–Litterman
+│   ├── backtest.py              # walk-forward engine + performance metrics
+│   └── dashboard.py             # generates the offline HTML dashboard
+├── docs/dashboard.html          # self-contained interactive dashboard
+├── examples/quickstart.py
+└── tests/                       # 29 tests (core + allocators + backtest)
 ```
+
+## The methods
+
+**Markowitz / max-Sharpe.** Maximise $(w^\top\mu - r_f) / \sqrt{w^\top\Sigma w}$
+over long-only, fully-invested $w$ (SciPy SLSQP).
+
+**Ledoit–Wolf shrinkage.** $\Sigma_{LW} = (1-\delta)\,\Sigma_{sample} + \delta\, m I$
+with $m = \mathrm{tr}(\Sigma_{sample})/N$ and $\delta$ estimated by minimising
+expected Frobenius loss — better conditioned, less extreme weights.
+
+**Risk Parity.** Each asset contributes equally to portfolio variance:
+$w_i(\Sigma w)_i = \sigma_p^2 / N$. Solved exactly via Spinu's convex
+reformulation $\min_x \tfrac{1}{2} x^\top \Sigma x - \sum_i b_i \log x_i$.
+
+**Hierarchical Risk Parity (López de Prado, 2016).** Cluster on the
+correlation distance $d_{ij} = \sqrt{\tfrac{1}{2}(1-\rho_{ij})}$,
+quasi-diagonalise Σ, then allocate down the dendrogram by recursive
+bisection, splitting capital in inverse proportion to cluster variances.
+No inversion, no μ — stability by construction.
+
+**Black–Litterman.** Equilibrium returns $\Pi = \lambda \Sigma w_{mkt}$ from
+reverse optimisation; views $P\mu = Q$ with uncertainty $\Omega$ blend to a
+posterior $\mu_{BL}$, which is then optimised for maximum utility
+$w^\top\mu_{BL} - \tfrac{\lambda}{2} w^\top \Sigma_{post} w$. In the demo,
+views *AMZN → 20%* and *JPM → 4%* move AMZN's implied return from 5.6%
+(equilibrium) to 12.6% (posterior) — toward the view, not onto it.
+
+**Walk-forward backtest.** Expanding window: train on all history to
+date, hold weights for 63 days, record out-of-sample returns, repeat.
+Metrics are computed from that realised stream only.
 
 ## Limitations
 
-- Mean-variance optimisation is sensitive to estimation error in $\mu$ and $\Sigma$; the "optimal" portfolio is optimal *for the estimates*, not for the future.
-- Normal-return Monte Carlo understates tail risk (real returns are fat-tailed).
-- No transaction costs, taxes, slippage, shorting, or leverage are modelled.
-- Synthetic data is for development and education — it is not market data.
+- Demo data is **synthetic** (GBM with a shared market factor): kind to
+  every strategy and nothing like real return tails, regimes or costs.
+- No transaction costs, slippage, taxes or turnover penalty in the
+  backtest; rebalancing is free, which flatters active allocators.
+- Long-only, no leverage, no shorting; Black–Litterman demo views are
+  illustrative, not research.
+- Past (or simulated) performance does not predict future results.
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
 
----
-
-*Educational use only — not investment advice.*
+*Educational project. Nothing here is investment advice.*

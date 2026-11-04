@@ -29,8 +29,16 @@ from portfolio_optimizer import (  # noqa: E402
     max_sharpe_portfolio,
     min_volatility_portfolio,
     monte_carlo_simulation,
+    portfolio_stats,
     summarise_simulation,
 )
+from allocators import (  # noqa: E402
+    black_litterman_portfolio,
+    hrp_portfolio,
+    risk_parity_portfolio,
+)
+from backtest import format_metrics_table, run_backtest  # noqa: E402
+from covariance import ledoit_wolf_shrinkage  # noqa: E402
 
 RISK_FREE_RATE = 0.02
 
@@ -51,6 +59,8 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--portfolios", type=int, default=5000)
     parser.add_argument("--simulations", type=int, default=1000)
+    parser.add_argument("--backtest", action="store_true",
+                        help="also run the walk-forward allocator backtest")
     args = parser.parse_args()
 
     tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "JPM", "XOM"]
@@ -75,6 +85,24 @@ def main() -> int:
     min_vol = min_volatility_portfolio(mu, cov, risk_free_rate=RISK_FREE_RATE)
     _print_portfolio("Minimum-volatility portfolio", tickers, min_vol)
 
+    # --- Advanced allocators on a Ledoit–Wolf shrunk covariance ---------
+    lw_cov, delta = ledoit_wolf_shrinkage(returns)
+    print(f"\nLedoit–Wolf shrinkage intensity δ = {delta:.4f} "
+          f"(covariance pulled {delta:.1%} toward scaled identity)")
+    rp_stats = portfolio_stats(risk_parity_portfolio(lw_cov), mu, cov, RISK_FREE_RATE)
+    _print_portfolio("Risk Parity portfolio (equal risk contribution)", tickers, rp_stats)
+    hrp_stats = portfolio_stats(hrp_portfolio(lw_cov), mu, cov, RISK_FREE_RATE)
+    _print_portfolio("HRP portfolio (Hierarchical Risk Parity)", tickers, hrp_stats)
+
+    market_w = np.full(len(tickers), 1.0 / len(tickers))
+    P = np.zeros((2, len(tickers)))
+    P[0, tickers.index("AMZN")] = 1.0   # view 1: AMZN will return 20%
+    P[1, tickers.index("JPM")] = 1.0    # view 2: JPM will return 4%
+    Q = np.array([0.20, 0.04])
+    bl_stats = black_litterman_portfolio(cov, market_w, P=P, Q=Q)
+    _print_portfolio("Black–Litterman portfolio (views: AMZN 20%, JPM 4%)",
+                     tickers, bl_stats)
+
     frontier = efficient_frontier(mu, cov, n_points=10, risk_free_rate=RISK_FREE_RATE)
     if not frontier.empty:
         print("\nEfficient frontier (sample)")
@@ -92,6 +120,14 @@ def main() -> int:
     print(f"  5th percentile         : ${summary['p5_final']:,.2f}")
     print(f"  95th percentile        : ${summary['p95_final']:,.2f}")
     print(f"  Probability of loss    : {summary['prob_loss']:6.2%}")
+
+    if args.backtest:
+        print("\nWalk-forward backtest — expanding window, Ledoit–Wolf covariance")
+        print("------------------------------------------------------------------")
+        result = run_backtest(seed=args.seed)
+        print(f"Out-of-sample days: {len(result.returns)}\n")
+        print(format_metrics_table(result.metrics))
+
     print("\nDisclaimer: Educational use only — not investment advice.")
     return 0
 
