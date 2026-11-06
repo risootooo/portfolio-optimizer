@@ -1,6 +1,6 @@
 # Portfolio Optimizer
 
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue) [![live dashboard](https://img.shields.io/badge/dashboard-live%20demo-blue)](https://risootooo.github.io/portfolio-optimizer/dashboard.html)
 ![Tests](https://img.shields.io/badge/tests-29%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Stack](https://img.shields.io/badge/stack-NumPy%20%7C%20Pandas%20%7C%20SciPy-orange)
@@ -18,6 +18,15 @@ future it is tested on.
 > and the backtest growth curves, rendered from data computed by this code.
 
 ---
+
+## Contents
+- [Headline results — walk-forward backtest](#headline-results--walk-forward-backtest)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Quickstart](#quickstart)
+- [Project structure](#project-structure)
+- [The methods](#the-methods)
+- [Limitations](#limitations) · [License](#license)
 
 ## Headline results — walk-forward backtest
 
